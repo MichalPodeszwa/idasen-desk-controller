@@ -1,0 +1,3 @@
+import IdasenCLI
+
+await runIdasen()

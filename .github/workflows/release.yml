@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      IS_RELEASE: ${{ github.event_name == 'push' }}
+      XCODE_APP: /Applications/Xcode_27.2.app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "$IS_RELEASE" == "true" ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v0.0.0-dryrun.${GITHUB_RUN_NUMBER}"
+          fi
+          scripts/ci/version-from-tag.sh "$tag" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check signing configuration
+        id: signing
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          if [[ -n "$SIGNING_CERT_P12" ]]; then
+            if [[ -z "$SIGNING_CERT_PASSWORD" ]]; then
+              echo "::error::Secret SIGNING_CERT_PASSWORD is not set. Run scripts/create-signing-cert.sh <output-dir> and set the secrets it prints."
+              exit 1
+            fi
+            if [[ ! -f .github/signing-cert.sha1 ]]; then
+              echo "::error::.github/signing-cert.sha1 is missing. Run scripts/create-signing-cert.sh <output-dir> once, copy the signing-cert.sha1 it writes to .github/signing-cert.sha1 and commit it."
+              exit 1
+            fi
+            echo "adhoc=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$IS_RELEASE" == "true" ]]; then
+            echo "::error::Secret SIGNING_CERT_P12 is not set. A tag build never falls back to ad-hoc signing. Run scripts/create-signing-cert.sh <output-dir> and set the secrets it prints."
+            exit 1
+          else
+            echo "::warning::SIGNING_CERT_P12 is not set, signing ad-hoc (dry run only)."
+            echo "adhoc=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Select Xcode 27
+        run: |
+          if [[ ! -d "$XCODE_APP" ]]; then
+            echo "::error::$XCODE_APP not found on this runner image"
+            ls /Applications
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          make generate
+
+      - name: Test
+        run: |
+          make test
+          make test-scripts
+
+      - name: Archive
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
+        run: |
+          xcodebuild archive \
+            -project Idasen.xcodeproj -scheme Idasen -configuration Release \
+            -archivePath build/Idasen.xcarchive -derivedDataPath build/DerivedData \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+          mkdir -p dist
+          ditto build/Idasen.xcarchive/Products/Applications/Idasen.app dist/Idasen.app
+
+      - name: Sign
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          ADHOC: ${{ steps.signing.outputs.adhoc }}
+        run: |
+          flags=()
+          if [[ "$ADHOC" == "true" ]]; then flags+=(--adhoc); fi
+          scripts/ci/sign.sh "${flags[@]}" dist/Idasen.app
+
+      - name: Verify signature
+        env:
+          ADHOC: ${{ steps.signing.outputs.adhoc }}
+        run: |
+          flags=()
+          if [[ "$ADHOC" == "true" ]]; then flags+=(--adhoc); fi
+          scripts/ci/verify-signature.sh "${flags[@]}" dist/Idasen.app
+
+      - name: Verify CLI version
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
+        run: |
+          actual="$(dist/Idasen.app/Contents/Helpers/idasen --version)"
+          echo "idasen --version: $actual"
+          if [[ "$actual" != "$MARKETING_VERSION ($GITHUB_RUN_NUMBER)" ]]; then
+            echo "::error::idasen --version printed '$actual', expected '$MARKETING_VERSION ($GITHUB_RUN_NUMBER)'"
+            exit 1
+          fi
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/ci/package.sh dist/Idasen.app "$VERSION" dist/release
+
+      - name: Publish release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          flags=()
+          if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/release/*.zip dist/release/SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" dist/release/*.zip dist/release/SHA256SUMS.txt \
+              --verify-tag --title "$TAG" --generate-notes "${flags[@]}"
+          fi
+
+      - name: Upload dry-run artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: idasen-dry-run-${{ github.run_number }}
+          path: dist/release/
+          if-no-files-found: error

@@ -1,0 +1,81 @@
+name: Idasen
+options:
+  bundleIdPrefix: io.github.michalpodeszwa
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ARCHS: arm64
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_APP_SANDBOX: NO
+packages:
+  DeskKit:
+    path: Packages/DeskKit
+targets:
+  Idasen:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: DeskKit
+        product: DeskKit
+      - package: DeskKit
+        product: DeskServer
+      - package: DeskKit
+        product: DeskIPC
+      - target: idasen-cli
+        embed: true
+        codeSign: true
+        link: false
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+    settings:
+      base:
+        PRODUCT_NAME: Idasen
+        ENABLE_DEBUG_DYLIB: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Idasen connects to your IKEA IDÅSEN desk over Bluetooth to show and change its height.
+        CODE_SIGN_ENTITLEMENTS: App/Resources/Idasen.entitlements
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: io.github.michalpodeszwa.idasen.debug
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: io.github.michalpodeszwa.idasen
+  idasen-cli:
+    type: tool
+    platform: macOS
+    sources:
+      - Tools/idasen
+    dependencies:
+      - package: DeskKit
+        product: IdasenCLI
+    settings:
+      base:
+        PRODUCT_NAME: idasen
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        SKIP_INSTALL: YES
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: io.github.michalpodeszwa.idasen.debug.cli
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: io.github.michalpodeszwa.idasen.cli
+schemes:
+  Idasen:
+    build:
+      targets:
+        Idasen: all
+    run:
+      config: Debug
+    archive:
+      config: Release
