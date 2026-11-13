@@ -1,6 +1,6 @@
 PROJECT := Idasen.xcodeproj
 SCHEME := Idasen
-DERIVED_DATA := build/DerivedData
+DERIVED_DATA := build/DerivedData.noindex
 SWIFT_SOURCES := App Packages Tools
 
 VERSION_ARGS := $(if $(MARKETING_VERSION),MARKETING_VERSION=$(MARKETING_VERSION)) \

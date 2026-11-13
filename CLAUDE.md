@@ -29,7 +29,7 @@ make generate                       # xcodegen generate; after any change to pro
 make test                           # swift test --package-path Packages/DeskKit; no hardware needed
 swift test --package-path Packages/DeskKit --filter IdasenCLITests.IdasenCLITests/testVersionString$
 make test-scripts                   # shell tests for scripts/ci
-make build                          # Debug build into build/DerivedData, ad-hoc signed
+make build                          # Debug build into build/DerivedData.noindex (hidden from Spotlight), ad-hoc signed
 make build MARKETING_VERSION=1.2.3 CURRENT_PROJECT_VERSION=42
 make e2e                            # builds, launches the app with --simulate in a temp support dir, drives it through the idasen CLI
 make hw-log                         # streams the app's os.Logger output into ~/Desktop/idasen-hw-logs/ (HW_LOG_ARGS="path"); start before a hardware session

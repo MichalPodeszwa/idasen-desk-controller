@@ -61,7 +61,7 @@ Exit codes, `--json` output and all commands are in [docs/cli.md](docs/cli.md).
 brew install xcodegen
 make generate      # after any change to project.yml or added/removed files
 make test          # unit tests, no hardware needed
-make build         # Debug build into build/DerivedData (ad-hoc signed)
+make build         # Debug build into build/DerivedData.noindex (ad-hoc signed, hidden from Spotlight)
 make lint          # swift format lint --strict;  make format fixes it
 make test-scripts  # shell tests for scripts/
 make e2e           # builds, runs the app against a simulated desk and drives it through the CLI
